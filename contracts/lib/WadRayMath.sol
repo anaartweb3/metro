@@ -11,12 +11,7 @@ library WadRayMath {
     uint256 internal constant HALF_RAY = RAY / 2;
     uint256 internal constant WAD_RAY_RATIO = 1e9;
 
-    /**
-     * @dev Multiplies two wad, rounding half up to the nearest wad
-     * @param a Wad
-     * @param b Wad
-     * @return The result of a*b, in wad
-     */
+    // @dev Multiplies two wad, rounding half up to the nearest wad
     function wadMul(uint256 a, uint256 b) internal pure returns (uint256) {
         if (a == 0 || b == 0) {
             return 0;
@@ -24,12 +19,7 @@ library WadRayMath {
         return (a * b + HALF_WAD) / WAD;
     }
 
-    /**
-     * @dev Divides two wad, rounding half up to the nearest wad
-     * @param a Wad
-     * @param b Wad
-     * @return The result of a/b, in wad
-     */
+    / /@dev Divides two wad, rounding half up to the nearest wad
     function wadDiv(uint256 a, uint256 b) internal pure returns (uint256) {
         return (a * WAD + b / 2) / b;
     }
