@@ -14,12 +14,6 @@ contract DebtToken is ReentrancyGuard, TokenHolder, Manageable, DebtTokenStorage
     uint256 public constant SECONDS_PER_YEAR = 365.25 days;
     uint256 private constant HUNDRED_PERCENT = 1e18;
 
-    event DebtRepaid(address indexed payer, address indexed account, uint256 amount, uint256 repaid, uint256 fee);
-    event DebtTokenActiveUpdated(bool newActive);
-    event InterestRateUpdated(uint256 oldInterestRate, uint256 newInterestRate);
-    event MaxTotalSupplyUpdated(uint256 oldMaxTotalSupply, uint256 newMaxTotalSupply);
-    event SyntheticTokenIssued(address indexed account, address indexed to, uint256 amount, uint256 issued, uint256 fee);
-
     modifier onlyIfSmartFarmingManager() {
         if (msg.sender != address(pool.smartFarmingManager())) revert SenderIsNotSmartFarmingManager();
         _;
@@ -40,9 +34,7 @@ contract DebtToken is ReentrancyGuard, TokenHolder, Manageable, DebtTokenStorage
         _;
     }
 
-    /**
-     * @dev Should be called before balance changes (i.e. mint/burn)
-     */
+    // @dev Should be called before balance changes (i.e. mint/burn)
     modifier updateRewardsBeforeMintOrBurn(address account_) {
         address[] memory _rewardsDistributors = pool.getRewardsDistributors();
         ISyntheticToken _syntheticToken = syntheticToken;
@@ -101,9 +93,7 @@ contract DebtToken is ReentrancyGuard, TokenHolder, Manageable, DebtTokenStorage
         revert ApprovalNotSupported();
     }
 
-    /**
-     * @notice Get the updated (principal + interest) user's debt
-     */
+    // @notice Get the updated (principal + interest) user's debt
     function balanceOf(address account_) public view override returns (uint256) {
         uint256 _principal = principalOf[account_];
         if (_principal == 0) {
@@ -126,9 +116,7 @@ contract DebtToken is ReentrancyGuard, TokenHolder, Manageable, DebtTokenStorage
         }
     }
 
-    /**
-     * @notice Lock collateral and mint synthetic token
-     */
+    // @notice Lock collateral and mint synthetic token
     function issue(uint256 amount_, address to_) external override whenNotShutdown nonReentrant onlyIfSyntheticTokenExists returns (uint256 _issued, uint256 _fee){
         if (amount_ == 0) revert AmountIsZero();
         accrueInterest();
@@ -145,16 +133,11 @@ contract DebtToken is ReentrancyGuard, TokenHolder, Manageable, DebtTokenStorage
             _syntheticToken.mint(_pool.feeCollector(), _fee);
         }
         _syntheticToken.mint(to_, _issued);
-        emit SyntheticTokenIssued(msg.sender, to_, amount_, _issued, _fee);
     }
 
     /**
      * @notice Issue synth without checking collateral and without minting debt tokens
      * @dev The healthy of outcome position must be done afterhand
-     * @param to_ The beneficiary account
-     * @param amount_ The amount to mint
-     * @return _issued The amount issued after fees
-     * @return _fee The fee amount collected
      */
     function flashIssue(address to_, uint256 amount_) external override onlyIfSmartFarmingManager whenNotShutdown nonReentrant onlyIfSyntheticTokenExists onlyIfDebtTokenIsActive returns (uint256 _issued, uint256 _fee){
         if (amount_ == 0) revert AmountIsZero();
@@ -171,23 +154,14 @@ contract DebtToken is ReentrancyGuard, TokenHolder, Manageable, DebtTokenStorage
         return interestRate / SECONDS_PER_YEAR;
     }
 
-    /**
-     * @notice onlySmartFarmingManager:: Mint `amount_` of debtToken at `to_`.
-     * @param to_ Receiver address
-     * @param amount_ Token amount to mint
-     */
+    // @notice onlySmartFarmingManager:: Mint `amount_` of debtToken at `to_`.
     function mint(address to_, uint256 amount_) external override onlyIfSmartFarmingManager whenNotShutdown nonReentrant onlyIfSyntheticTokenExists onlyIfSyntheticTokenIsActive {
         accrueInterest();
         IPool _pool = pool;
         _mint(_pool, _pool.masterOracle(), to_, amount_);
     }
 
-    /**
-     * @notice Quote gross `_amount` to issue `amountToIssue_` synthetic tokens
-     * @param amountToIssue_ Synth to issue
-     * @return _amount Gross amount
-     * @return _fee The fee amount to collect
-     */
+    // @notice Quote gross `_amount` to issue `amountToIssue_` synthetic tokens
     function quoteIssueIn(uint256 amountToIssue_) external view override returns (uint256 _amount, uint256 _fee) {
         uint256 _issueFee = pool.feeProvider().issueFee();
         if (_issueFee == 0) {
@@ -197,12 +171,7 @@ contract DebtToken is ReentrancyGuard, TokenHolder, Manageable, DebtTokenStorage
         _fee = _amount - amountToIssue_;
     }
 
-    /**
-     * @notice Quote synthetic tokens `_amountToIssue` by using gross `_amount`
-     * @param amount_ Gross amount
-     * @return _amountToIssue Synth to issue
-     * @return _fee The fee amount to collect
-     */
+    // @notice Quote synthetic tokens `_amountToIssue` by using gross `_amount`
     function quoteIssueOut(uint256 amount_) public view override returns (uint256 _amountToIssue, uint256 _fee) {
         uint256 _issueFee = pool.feeProvider().issueFee();
         if (_issueFee == 0) {
@@ -212,12 +181,7 @@ contract DebtToken is ReentrancyGuard, TokenHolder, Manageable, DebtTokenStorage
         _amountToIssue = amount_ - _fee;
     }
 
-    /**
-     * @notice Quote synthetic token `_amount` need to repay `amountToRepay_` debt
-     * @param amountToRepay_ Debt amount to repay
-     * @return _amount Gross amount
-     * @return _fee The fee amount to collect
-     */
+    // @notice Quote synthetic token `_amount` need to repay `amountToRepay_` debt
     function quoteRepayIn(uint256 amountToRepay_) public view override returns (uint256 _amount, uint256 _fee) {
         uint256 _repayFee = pool.feeProvider().repayFee();
         if (_repayFee == 0) {
@@ -227,12 +191,7 @@ contract DebtToken is ReentrancyGuard, TokenHolder, Manageable, DebtTokenStorage
         _amount = amountToRepay_ + _fee;
     }
 
-    /**
-     * @notice Quote debt `_amountToRepay` by burning `_amount` synthetic tokens
-     * @param amount_ Gross amount
-     * @return _amountToRepay Debt amount to repay
-     * @return _fee The fee amount to collect
-     */
+    // @notice Quote debt `_amountToRepay` by burning `_amount` synthetic tokens
     function quoteRepayOut(uint256 amount_) public view override returns (uint256 _amountToRepay, uint256 _fee) {
         uint256 _repayFee = pool.feeProvider().repayFee();
         if (_repayFee == 0) {
@@ -242,13 +201,7 @@ contract DebtToken is ReentrancyGuard, TokenHolder, Manageable, DebtTokenStorage
         _fee = amount_ - _amountToRepay;
     }
 
-    /**
-     * @notice Send synthetic token to decrease debt
-     * @dev The msg.sender is the payer and the account beneficed
-     * @param onBehalfOf_ The account that will have debt decreased
-     * @param amount_ The amount of synthetic token to burn (this is the gross amount, the repay fee will be subtracted from it)
-     * @return _repaid The amount repaid after fees
-     */
+    // @notice Send synthetic token to decrease debt
     function repay(address onBehalfOf_, uint256 amount_) external override whenNotShutdown nonReentrant onlyIfSyntheticTokenExists returns (uint256 _repaid, uint256 _fee){
         if (amount_ == 0) revert AmountIsZero();
         accrueInterest();
@@ -270,16 +223,9 @@ contract DebtToken is ReentrancyGuard, TokenHolder, Manageable, DebtTokenStorage
         }
         _syntheticToken.burn(msg.sender, _repaid);
         _burn(onBehalfOf_, _repaid);
-        emit DebtRepaid(msg.sender, onBehalfOf_, amount_, _repaid, _fee);
     }
 
-    /**
-     * @notice Send synthetic token to decrease debt
-     * @dev This function helps users to no leave debt dust behind
-     * @param onBehalfOf_ The account that will have debt decreased
-     * @return _repaid The amount repaid after fees
-     * @return _fee The fee amount collected
-     */
+    // @notice Send synthetic token to decrease debt
     function repayAll(address onBehalfOf_) external override whenNotShutdown nonReentrant onlyIfSyntheticTokenExists returns (uint256 _repaid, uint256 _fee){
         accrueInterest();
         _repaid = balanceOf(onBehalfOf_);
@@ -292,7 +238,6 @@ contract DebtToken is ReentrancyGuard, TokenHolder, Manageable, DebtTokenStorage
         }
         _syntheticToken.burn(msg.sender, _repaid);
         _burn(onBehalfOf_, _repaid);
-        emit DebtRepaid(msg.sender, onBehalfOf_, _amount, _repaid, _fee);
     }
 
     function totalSupply() external view override returns (uint256) {
@@ -312,9 +257,7 @@ contract DebtToken is ReentrancyGuard, TokenHolder, Manageable, DebtTokenStorage
         revert TransferNotSupported();
     }
 
-    /**
-     * @notice Destroy `amount` tokens from `account`, reducing the total supply
-     */
+    // @notice Destroy `amount` tokens from `account`, reducing the total supply
     function _burn(address account_, uint256 amount_) private updateRewardsBeforeMintOrBurn(account_) {
         if (account_ == address(0)) revert BurnFromNullAddress();
         uint256 _accountBalance = balanceOf(account_);
@@ -324,7 +267,6 @@ contract DebtToken is ReentrancyGuard, TokenHolder, Manageable, DebtTokenStorage
             debtIndexOf[account_] = debtIndex;
             totalSupply_ -= amount_;
         }
-        emit Transfer(account_, address(0), amount_);
         // Remove this token from the debt tokens list if the sender's balance goes to zero
         if (amount_ > 0 && balanceOf(account_) == 0) {
             pool.removeFromDebtTokensOfAccount(account_);
@@ -332,7 +274,6 @@ contract DebtToken is ReentrancyGuard, TokenHolder, Manageable, DebtTokenStorage
     }
 
     /**
-     * @notice Calculate interest to accrue
      * @dev This util function avoids code duplication across `balanceOf` and `accrueInterest`
      * @return _interestAmountAccrued The total amount of debt tokens accrued
      * @return _debtIndex The new `debtIndex` value
@@ -349,9 +290,7 @@ contract DebtToken is ReentrancyGuard, TokenHolder, Manageable, DebtTokenStorage
         }
     }
 
-    /**
-     * @dev Create `amount` tokens and assigns them to `account`, increasing the total supply
-     */
+    // @dev Create `amount` tokens and assigns them to `account`, increasing the total supply
     function _mint(IPool pool_, IMasterOracle masterOracle_, address account_, uint256 amount_) private onlyIfDebtTokenIsActive updateRewardsBeforeMintOrBurn(account_) {
         if (account_ == address(0)) revert MintToNullAddress();
         uint256 _debtFloorInUsd = pool_.debtFloorInUsd();
@@ -363,7 +302,6 @@ contract DebtToken is ReentrancyGuard, TokenHolder, Manageable, DebtTokenStorage
         if (totalSupply_ > maxTotalSupply) revert SurpassMaxDebtSupply();
         principalOf[account_] = _balanceBefore + amount_;
         debtIndexOf[account_] = debtIndex;
-        emit Transfer(address(0), account_, amount_);
         //  Add this token to the debt tokens list if the recipient is receiving it for the 1st time
         if (_balanceBefore == 0 && amount_ > 0) {
             pool.addToDebtTokensOfAccount(account_);
@@ -375,7 +313,6 @@ contract DebtToken is ReentrancyGuard, TokenHolder, Manageable, DebtTokenStorage
     function updateMaxTotalSupply(uint256 newMaxTotalSupply_) external override onlyGovernor {
         uint256 _currentMaxTotalSupply = maxTotalSupply;
         if (newMaxTotalSupply_ == _currentMaxTotalSupply) revert NewValueIsSameAsCurrent();
-        emit MaxTotalSupplyUpdated(_currentMaxTotalSupply, newMaxTotalSupply_);
         maxTotalSupply = newMaxTotalSupply_;
     }
 
@@ -383,13 +320,11 @@ contract DebtToken is ReentrancyGuard, TokenHolder, Manageable, DebtTokenStorage
         accrueInterest();
         uint256 _currentInterestRate = interestRate;
         if (newInterestRate_ == _currentInterestRate) revert NewValueIsSameAsCurrent();
-        emit InterestRateUpdated(_currentInterestRate, newInterestRate_);
         interestRate = newInterestRate_;
     }
 
     function toggleIsActive() external override onlyGovernor {
         bool _newIsActive = !isActive;
-        emit DebtTokenActiveUpdated(_newIsActive);
         isActive = _newIsActive;
     }
 }
