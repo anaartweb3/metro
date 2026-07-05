@@ -1,0 +1,122 @@
+#
+# Table with errors' signatures for debugging help (useful for E2E tests)
+#
+# Note: Use this table for the case https://openchain.xyz/signatures isn't helping
+#
+# Steps to update this file:
+#
+# 1) Generate array with all errors
+# cat contracts/*.sol | grep ^error| cut -d" " -f2 | sed s/^/\'/g | sed s/\;/\'\,/g
+#
+# 2) Create script to print signatures
+# ```js
+# const Web3 = require("web3")
+# const web3 = new Web3()
+# const errors = [<paste from step above>]
+# for (const e of errors) {
+#   console.log(`${e} -> ${web3.eth.abi.encodeFunctionSignature(e)}`)
+# }
+# ```
+# 3) Clean output and save file
+# node errors-scripts.js | sort | uniq > custom-errors.txt
+#
+
+AddressIsNull() -> 0xfb7566d7
+AllowanceNotSupported() -> 0xeffde13d
+AlreadyRegistered() -> 0x3a81d6fc
+AmountExceedsAllowance() -> 0xe052bc40
+AmountGreaterThanMaxLiquidable() -> 0xe292f24f
+AmountInIsInvalid() -> 0xca990739
+AmountIsInvalid() -> 0x5cddce79
+AmountIsTooHigh() -> 0x5de1e541
+AmountIsZero() -> 0x43ad20fc
+ApprovalNotSupported() -> 0x6d23a3cc
+ApproveFromTheZeroAddress() -> 0xadfb5cca
+ApproveToTheZeroAddress() -> 0xb2fa1ef3
+ArraysLengthDoNotMatch() -> 0xee0a9038
+BeneficiaryIsNull() -> 0x639c77e3
+BridgingIsPaused() -> 0x5621fccf
+BurnAmountExceedsBalance() -> 0x177466fe
+BurnFromNullAddress() -> 0x5c11dabc
+BurnFromTheZeroAddress() -> 0x4fca6bd0
+CanNotLiquidateOwnPosition() -> 0x0ecda8a7
+CollateralFactorTooHigh() -> 0x9479a571
+CollateralIsInexistent() -> 0x1882f774
+CrossChainRequestCompletedAlready() -> 0x1029bc8a
+CrossChainRequestInvalidKey() -> 0x46fe2654
+DebtLowerThanTheFloor() -> 0xfcedaa52
+DebtTokenAlreadyExists() -> 0x3e8ef6ae
+DebtTokenDoesNotExist() -> 0x59c937f1
+DebtTokenInactive() -> 0xa4382ae3
+DecimalsIsNull() -> 0x9b88f082
+DecreasedAllowanceBelowZero() -> 0xc4eeb578
+DepositTokenAlreadyExists() -> 0xdd40dad9
+DepositTokenDoesNotExist() -> 0xa67d5283
+DepositTokenIsInactive() -> 0x37248b72
+DestinationChainNotAllowed() -> 0x334dc1fd
+DistributorDoesNotExist() -> 0x4757a01f
+FeeCollectorIsNull() -> 0xd7d925af
+FeeIsGreaterThanTheMax() -> 0xc36e2d76
+FlashRepaySlippageTooHigh() -> 0x87297bbe
+InvalidFromAddress() -> 0x7ab628f9
+InvalidMsgSender() -> 0x3bfe162b
+InvalidOperationType() -> 0x1d5aac32
+InvalidToken() -> 0xc1ab6dc1
+LeverageSlippageTooHigh() -> 0xc724afdf
+LeverageTooHigh() -> 0x0a4f5a07
+LeverageTooLow() -> 0x641f87fc
+MaxLiquidableTooHigh() -> 0xf0b002d4
+MintToNullAddress() -> 0xad84ce44
+MintToTheZeroAddress() -> 0xc96c2a0b
+NameIsNull() -> 0x6e83f507
+NativeTokenGatewayIsNull() -> 0xae258b7c
+NewValueIsSameAsCurrent() -> 0x333a6810
+NotAvailableOnThisChain() -> 0xd2580b89
+NotEnoughCollateral() -> 0x34477cc0
+NotEnoughFreeBalance() -> 0x35f207e2
+NotTokenSpeedKeeper() -> 0xab776c12
+OracleIsNull() -> 0x998bd266
+PoolIsNull() -> 0x7963f63e
+PoolRegistryIsNull() -> 0xf96c5e56
+PositionIsHealthy() -> 0x4051037a
+PositionIsNotHealthy() -> 0xcfd36003
+ReachedMaxDepositTokens() -> 0x896d816c
+ReachedMaxRewardTokens() -> 0x9e8b4a21
+RecipientIsNull() -> 0x4c96446b
+RemainingDebtIsLowerThanTheFloor() -> 0x32b9d473
+RewardDistributorAlreadyExists() -> 0xf2bbfd28
+RewardDistributorDoesNotExist() -> 0x62c4c75f
+RewardTokenIsNull() -> 0xda962c6e
+SenderCanNotBurn() -> 0x848003b5
+SenderCanNotMint() -> 0x5a141304
+SenderCanNotSeize() -> 0x0049987f
+SenderIsNotAccount() -> 0x87ab7e77
+SenderIsNotCrossChainDispatcher() -> 0x56f19c36
+SenderIsNotDebtToken() -> 0x9f1722e0
+SenderIsNotDepositToken() -> 0x4cd11d76
+SenderIsNotGovernor() -> 0x97308922
+SenderIsNotNativeToken() -> 0x157ea6df
+SenderIsNotSmartFarmingManager() -> 0x126bfdae
+SenderIsNotTheOwner() -> 0x11fbe4a9
+SurpassMaxBridgingSupply() -> 0x9da48d25
+SurpassMaxDebtSupply() -> 0x95da4a22
+SurpassMaxDepositSupply() -> 0x9cad93a1
+SurpassMaxSynthSupply() -> 0x4f0787e8
+SwapFeatureIsInactive() -> 0xe101012c
+SymbolIsNull() -> 0x60a0f9fe
+SyntheticDoesNotExist() -> 0xa596698b
+SyntheticIsInactive() -> 0x1893ec88
+SyntheticIsInUse() -> 0xfa9b8099
+SyntheticIsNull() -> 0x27436860
+TierDiscountTooHigh() -> 0x50e630a7
+TiersNotOrderedByMin() -> 0x89dfe022
+TokenInIsNull() -> 0x4f70ad6b
+TotalSupplyIsNotZero() -> 0x3304bf88
+TransferAmountExceedsBalance() -> 0x5dd58b8b
+TransferFromTheZeroAddress() -> 0x24053170
+TransferNotSupported() -> 0xd21ad44b
+TransferToTheZeroAddress() -> 0xce3a35ba
+UnderlyingAssetInUse() -> 0x6e9ec026
+UnderlyingAssetIsNull() -> 0xd63ca0f0
+UnregisteredPool() -> 0x141622a8
+UserReachedMaxTokens() -> 0x1b3bae0c
