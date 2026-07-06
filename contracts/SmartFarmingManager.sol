@@ -95,9 +95,6 @@ contract SmartFarmingManager is ReentrancyGuard, Manageable, SmartFarmingManager
     /**
      * @notice Finalize cross-chain flash debt repayment process
      * @dev Receives msAsset from L1 and use it to repay
-     * @param id_ The id of the request
-     * @param swapAmountOut_ The msAsset amount received from L1 swap
-     * @return _repaid The debt amount repaid
      */
     function crossChainFlashRepayCallback(uint256 id_, uint256 swapAmountOut_) external override whenNotShutdown nonReentrant onlyIfCrossChainDispatcher returns (uint256 _repaid) {
         CrossChainFlashRepay memory _request = crossChainFlashRepays[id_];
@@ -175,12 +172,6 @@ contract SmartFarmingManager is ReentrancyGuard, Manageable, SmartFarmingManager
         crossChainDispatcher().triggerLeverageSwap{value: msg.value}({id_: _id, account_: payable(msg.sender), tokenIn_: address(_swapTokenIn), tokenOut_: address(_swapTokenOut), amountIn_: _swapAmountIn, amountOutMin: _swapAmountOutMin, lzArgs_: lzArgs_});
     }
 
-    /**
-     * @dev Receives bridged token (aka naked token) use it to deposit
-     * @param id_ The id of the request
-     * @param swapAmountOut_ The amount received from swap
-     * @return _deposited The amount deposited
-     */
     function crossChainLeverageCallback(uint256 id_, uint256 swapAmountOut_) external override whenNotShutdown nonReentrant onlyIfCrossChainDispatcher returns (uint256 _deposited) {
         CrossChainLeverage memory _request = crossChainLeverages[id_];
         if (_request.account == address(0)) revert CrossChainRequestInvalidKey();
@@ -212,13 +203,6 @@ contract SmartFarmingManager is ReentrancyGuard, Manageable, SmartFarmingManager
         if (!_isHealthy) revert PositionIsNotHealthy();
     }
 
-    /**
-     * @notice Flash debt repayment
-     * @param syntheticToken_ The debt token to repay
-     * @param depositToken_ The collateral to withdraw
-     * @param withdrawAmount_ The amount to withdraw
-     * @param repayAmountMin_ The minimum amount to repay (slippage check)
-     */
     function flashRepay(ISyntheticToken syntheticToken_, IDepositToken depositToken_, uint256 withdrawAmount_, uint256 repayAmountMin_) external override whenNotShutdown nonReentrant onlyIfDepositTokenExists(depositToken_) onlyIfSyntheticTokenExists(syntheticToken_) returns (uint256 _withdrawn, uint256 _repaid){
         if (withdrawAmount_ == 0) revert AmountIsZero();
         if (withdrawAmount_ > depositToken_.balanceOf(msg.sender)) revert AmountIsTooHigh();
@@ -332,72 +316,35 @@ contract SmartFarmingManager is ReentrancyGuard, Manageable, SmartFarmingManager
         return pool.poolRegistry().swapper();
     }
 
-    /**
-     * @notice Calculate debt to issue for a leverage operation
-     * @param collateral_ The collateral to deposit
-     * @param syntheticToken_ The msAsset to mint
-     * @param amountIn_ The amount to deposit
-     * @param leverage_ The leverage X param (e.g. 1.5e18 for 1.5X)
-     * @return _debtAmount The debt issue
-     */
     function _calculateLeverageDebtAmount(IERC20 collateral_, ISyntheticToken syntheticToken_, uint256 amountIn_, uint256 leverage_) private view returns (uint256 _debtAmount) {
         return pool.masterOracle().quote(address(collateral_), address(syntheticToken_), (leverage_ - 1e18).wadMul(amountIn_));
     }
 
     /**
-     * @dev `collateral` is a better name than `underlying`
-     * See more: https://github.com/autonomoussoftware/metronome-synth/issues/905
+     * @dev `collateral` is a better name than `underlying`. See more: https://github.com/autonomoussoftware/metronome-synth/issues/905
      */
     function _collateralOf(IDepositToken depositToken_) private view returns (IERC20) {
         return depositToken_.underlying();
     }
 
     /**
-     * @dev Generates cross-chain request id by hashing `chainId`+`requestId` in order to avoid
-     * having same id across supported chains
+     * @dev Generates cross-chain request id by hashing `chainId`+`requestId` in order to avoid having same id across supported chains
      * Note: The cross-chain code mostly uses LZ chain ids but in this case, we're using native id.
      */
     function _nextCrossChainRequestId() private returns (uint256 _id) {
         return uint256(keccak256(abi.encode(block.chainid, address(this), ++crossChainRequestsLength)));
     }
 
-    /**
-     * @notice Transfer token and check actual amount transferred
-     * @param token_ The token to transfer
-     * @param from_ The account to get tokens from
-     * @param amount_ The amount to transfer
-     * @return _transferred The actual transferred amount
-     */
     function _safeTransferFrom(IERC20 token_, address from_, uint256 amount_) private returns (uint256 _transferred) {
         uint256 _before = token_.balanceOf(address(this));
         token_.safeTransferFrom(from_, address(this), amount_);
         return token_.balanceOf(address(this)) - _before;
     }
 
-    /**
-     * @notice Swap assets using Swapper contract
-     * @dev Use `address(this)` as amount out receiver
-     * @param swapper_ The Swapper contract
-     * @param tokenIn_ The token to swap from
-     * @param tokenOut_ The token to swap to
-     * @param amountIn_ The amount in
-     * @param amountOutMin_ The minimum amount out (slippage check)
-     * @return _amountOut The actual amount out
-     */
     function _swap(ISwapper swapper_, IERC20 tokenIn_, IERC20 tokenOut_, uint256 amountIn_, uint256 amountOutMin_) private returns (uint256 _amountOut) {
         return _swap(swapper_, tokenIn_, tokenOut_, amountIn_, amountOutMin_, address(this));
     }
 
-    /**
-     * @notice Swap assets using Swapper contract
-     * @param swapper_ The Swapper contract
-     * @param tokenIn_ The token to swap from
-     * @param tokenOut_ The token to swap to
-     * @param amountIn_ The amount in
-     * @param amountOutMin_ The minimum amount out (slippage check)
-     * @param to_ The amount out receiver
-     * @return _amountOut The actual amount out
-     */
     function _swap(ISwapper swapper_, IERC20 tokenIn_, IERC20 tokenOut_, uint256 amountIn_, uint256 amountOutMin_, address to_) private returns (uint256 _amountOut) {
         if (tokenIn_ != tokenOut_) {
             tokenIn_.safeApprove(address(swapper_), 0);
