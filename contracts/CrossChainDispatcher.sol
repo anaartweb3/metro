@@ -20,13 +20,8 @@ interface IPoolV4 is IPool {
 }
 
 contract CrossChainDispatcher is ReentrancyGuard, CrossChainDispatcherStorageV2 {
-    using SafeERC20 for IERC20;
-    using BytesLib for bytes;
-
-
     // @dev LayerZero adapter param version. See more: https://layerzero.gitbook.io/docs/evm-guides/advanced/relayer-adapter-parameters
     uint16 private constant LZ_ADAPTER_PARAMS_VERSION = 2;
-
     uint256 private constant MAX_BPS = 100_00;
 
     struct LayerZeroParams {
@@ -75,10 +70,9 @@ contract CrossChainDispatcher is ReentrancyGuard, CrossChainDispatcherStorageV2 
     receive() external payable {}
 
     function initialize(IPoolRegistry poolRegistry_, address weth_, address sgeth_) external initializer {
-        if (address(poolRegistry_) == address(0)) revert AddressIsNull();
         __ReentrancyGuard_init();
         poolRegistry = poolRegistry_;
-        stargateSlippage = 50; // 0.5%
+        stargateSlippage = 50;
         lzBaseGasLimit = 200_000;
         flashRepayCallbackTxGasLimit = 750_000;
         flashRepaySwapTxGasLimit = 500_000;
@@ -111,14 +105,11 @@ contract CrossChainDispatcher is ReentrancyGuard, CrossChainDispatcherStorageV2 
         ISmartFarmingManager(_smartFarmingManager).crossChainFlashRepayCallback(_requestId, amount_);
     }
 
-    // @dev Swap synthetic token for underlying and trigger callback call
     function _swapAndTriggerLeverageCallback(uint16 srcChainId_, uint amountIn_, bytes calldata payload_) private {
-        // 1. Swap
         (address _srcSmartFarmingManager,address _dstProxyOFT,uint256 _requestId,uint256 _sgPoolId,address _account,uint256 _amountOutMin,uint256 _callbackTxNativeFee) = CrossChainLib.decodeLeverageSwapPayload(payload_);
         address _bridgeToken = IStargatePool(IStargateFactory(stargateComposer.factory()).getPool(_sgPoolId)).token();
         if (_bridgeToken == sgeth) _bridgeToken = weth;
         amountIn_ = _swap({requestId_: _requestId, tokenIn_: IProxyOFT(_dstProxyOFT).token(), tokenOut_: _bridgeToken, amountIn_: amountIn_, amountOutMin_: _amountOutMin});
-        // 2. Transfer underlying to source chain
         uint16 _srcChainId = srcChainId_;
         _sendUsingStargate(LayerZeroParams({tokenIn: _bridgeToken, dstChainId: _srcChainId, amountIn: amountIn_, nativeFee: _callbackTxNativeFee + extraCallbackTxNativeFee[_requestId], payload: CrossChainLib.encodeLeverageCallbackPayload(_srcSmartFarmingManager, _requestId), refundAddress: _account, dstGasForCall: leverageCallbackTxGasLimit, dstNativeAmount: 0}));
     }
@@ -158,11 +149,9 @@ contract CrossChainDispatcher is ReentrancyGuard, CrossChainDispatcherStorageV2 
     }
 
     function _swapAndTriggerFlashRepayCallback(uint16 srcChainId_, address token_, uint256 amount_, bytes memory payload_) private {
-        // 1. Swap
         (address _srcSmartFarmingManager,address _dstProxyOFT,uint256 _requestId,address _account,uint256 _amountOutMin,uint256 _callbackTxNativeFee) = CrossChainLib.decodeFlashRepaySwapPayload(payload_);
         address _syntheticToken = IProxyOFT(_dstProxyOFT).token();
         amount_ = _swap({requestId_: _requestId, tokenIn_: token_, tokenOut_: _syntheticToken, amountIn_: amount_, amountOutMin_: _amountOutMin});
-        // 2. Transfer synthetic token to source chain
         uint16 _srcChainId = srcChainId_;
         address _srcProxyOFT = IProxyOFT(_dstProxyOFT).getProxyOFTOf(_srcChainId);
         _sendUsingLayerZero(LayerZeroParams({tokenIn: _syntheticToken, dstChainId: _srcChainId, amountIn: amount_, payload: CrossChainLib.encodeFlashRepayCallbackPayload(_srcProxyOFT, _srcSmartFarmingManager, _requestId), refundAddress: _account, dstGasForCall: flashRepayCallbackTxGasLimit, dstNativeAmount: 0, nativeFee: _callbackTxNativeFee + extraCallbackTxNativeFee[_requestId]}));
@@ -204,35 +193,28 @@ contract CrossChainDispatcher is ReentrancyGuard, CrossChainDispatcherStorageV2 
         address _account = account_;
         (uint16 _dstChainId, uint256 callbackTxNativeFee_, uint64 flashRepaySwapTxGasLimit_) = CrossChainLib.decodeLzArgs(lzArgs_);
         bytes memory _payload;
-        {
-            address _dstProxyOFT = ISyntheticToken(tokenOut_).proxyOFT().getProxyOFTOf(_dstChainId);
-            if (_dstProxyOFT == address(0)) revert AddressIsNull();
-            if (!isDestinationChainSupported[_dstChainId]) revert DestinationChainNotAllowed();
-            uint256 _requestId = requestId_;
-            _payload = CrossChainLib.encodeFlashRepaySwapPayload({srcSmartFarmingManager_: msg.sender, dstProxyOFT_: _dstProxyOFT, requestId_: _requestId, account_: _account, amountOutMin_: amountOutMin_, callbackTxNativeFee_: callbackTxNativeFee_});
-        }
+        address _dstProxyOFT = ISyntheticToken(tokenOut_).proxyOFT().getProxyOFTOf(_dstChainId);
+        if (_dstProxyOFT == address(0)) revert AddressIsNull();
+        if (!isDestinationChainSupported[_dstChainId]) revert DestinationChainNotAllowed();
+        uint256 _requestId = requestId_;
+        _payload = CrossChainLib.encodeFlashRepaySwapPayload({srcSmartFarmingManager_: msg.sender, dstProxyOFT_: _dstProxyOFT, requestId_: _requestId, account_: _account, amountOutMin_: amountOutMin_, callbackTxNativeFee_: callbackTxNativeFee_});
         _sendUsingStargate(LayerZeroParams({tokenIn: tokenIn_, dstChainId: _dstChainId, amountIn: amountIn_, nativeFee: msg.value, payload: _payload, refundAddress: _account, dstGasForCall: flashRepaySwapTxGasLimit_, dstNativeAmount: callbackTxNativeFee_}));
     }
 
-    /***
-     * @notice Send synthetic token and trigger swap at destination chain
-     * @dev Not checking if bridging is pause because `ProxyOFT._debitFrom()` does it
-     */
+    // @dev Not checking if bridging is pause because `ProxyOFT._debitFrom()` does it
     function triggerLeverageSwap(uint256 requestId_, address payable account_, address tokenIn_, address tokenOut_, uint256 amountIn_, uint256 amountOutMin_, bytes calldata lzArgs_) external payable override nonReentrant onlyIfSmartFarmingManager onlyIfBridgingIsNotPaused {
         address _account = account_;
         (uint16 _dstChainId, uint256 _callbackTxNativeFee, uint64 _leverageSwapTxGasLimit) = CrossChainLib.decodeLzArgs(lzArgs_);
         bytes memory _payload;
-        {
-            address _tokenOut = tokenOut_;
-            uint256 _requestId = requestId_;
-            uint256 _amountOutMin = amountOutMin_;
-            address _dstProxyOFT = ISyntheticToken(tokenIn_).proxyOFT().getProxyOFTOf(_dstChainId);
-            uint256 _sgPoolId = stargatePoolIdOf[_tokenOut];
-            if (_dstProxyOFT == address(0)) revert AddressIsNull();
-            if (!isDestinationChainSupported[_dstChainId]) revert DestinationChainNotAllowed();
-            if (_sgPoolId == 0) revert BridgeTokenNotSupported();
-            _payload = CrossChainLib.encodeLeverageSwapPayload({srcSmartFarmingManager_: msg.sender, dstProxyOFT_: _dstProxyOFT, requestId_: _requestId, sgPoolId_: _sgPoolId, account_: _account, amountOutMin_: _amountOutMin, callbackTxNativeFee_: _callbackTxNativeFee});
-        }
+        address _tokenOut = tokenOut_;
+        uint256 _requestId = requestId_;
+        uint256 _amountOutMin = amountOutMin_;
+        address _dstProxyOFT = ISyntheticToken(tokenIn_).proxyOFT().getProxyOFTOf(_dstChainId);
+        uint256 _sgPoolId = stargatePoolIdOf[_tokenOut];
+        if (_dstProxyOFT == address(0)) revert AddressIsNull();
+        if (!isDestinationChainSupported[_dstChainId]) revert DestinationChainNotAllowed();
+        if (_sgPoolId == 0) revert BridgeTokenNotSupported();
+        _payload = CrossChainLib.encodeLeverageSwapPayload({srcSmartFarmingManager_: msg.sender, dstProxyOFT_: _dstProxyOFT, requestId_: _requestId, sgPoolId_: _sgPoolId, account_: _account, amountOutMin_: _amountOutMin, callbackTxNativeFee_: _callbackTxNativeFee});
         _sendUsingLayerZero(LayerZeroParams({tokenIn: tokenIn_, dstChainId: _dstChainId, amountIn: amountIn_, payload: _payload, refundAddress: _account, dstGasForCall: _leverageSwapTxGasLimit, dstNativeAmount: _callbackTxNativeFee, nativeFee: msg.value}));
     }
 
@@ -246,10 +228,8 @@ contract CrossChainDispatcher is ReentrancyGuard, CrossChainDispatcherStorageV2 
     function _sendUsingStargate(LayerZeroParams memory params_) private {
         IStargateRouter.lzTxObj memory _lzTxParams;
         bytes memory _to = abi.encodePacked(crossChainDispatcherOf[params_.dstChainId]);
-        {
-            if (_to.toAddress(0) == address(0)) revert AddressIsNull();
-            _lzTxParams = IStargateRouter.lzTxObj({dstGasForCall: params_.dstGasForCall, dstNativeAmount: params_.dstNativeAmount, dstNativeAddr: (params_.dstNativeAmount > 0) ? _to : abi.encode(0)});
-        }
+        if (_to.toAddress(0) == address(0)) revert AddressIsNull();
+        _lzTxParams = IStargateRouter.lzTxObj({dstGasForCall: params_.dstGasForCall, dstNativeAmount: params_.dstNativeAmount, dstNativeAddr: (params_.dstNativeAmount > 0) ? _to : abi.encode(0)});
         uint256 _poolId = stargatePoolIdOf[params_.tokenIn];
         if (_poolId == 0) revert BridgeTokenNotSupported();
         uint256 _amountOutMin = (params_.amountIn * (MAX_BPS - stargateSlippage)) / MAX_BPS;
@@ -267,48 +247,15 @@ contract CrossChainDispatcher is ReentrancyGuard, CrossChainDispatcherStorageV2 
     }
 
     function _swap(uint256 requestId_, address tokenIn_, address tokenOut_, uint256 amountIn_, uint256 amountOutMin_) private returns (uint256 _amountOut) {
-        // 1. Use updated slippage if exist
         uint256 _storedAmountOutMin = swapAmountOutMin[requestId_];
         if (_storedAmountOutMin > 0) {
-            // Use stored slippage and clear it
             amountOutMin_ = _storedAmountOutMin;
             delete swapAmountOutMin[requestId_];
         }
-        // 2. Perform swap
         ISwapper _swapper = poolRegistry.swapper();
         IERC20(tokenIn_).safeApprove(address(_swapper), 0);
         IERC20(tokenIn_).safeApprove(address(_swapper), amountIn_);
         _amountOut = _swapper.swapExactInput({tokenIn_: tokenIn_, tokenOut_: tokenOut_, amountIn_: amountIn_, amountOutMin_: amountOutMin_, receiver_: address(this)});
-    }
-
-    function updateFlashRepayCallbackTxGasLimit(uint64 newFlashRepayCallbackTxGasLimit_) external onlyGovernor {
-        uint64 _currentFlashRepayCallbackTxGasLimit = flashRepayCallbackTxGasLimit;
-        if (newFlashRepayCallbackTxGasLimit_ == _currentFlashRepayCallbackTxGasLimit) revert NewValueIsSameAsCurrent();
-        flashRepayCallbackTxGasLimit = newFlashRepayCallbackTxGasLimit_;
-    }
-
-    function updateFlashRepaySwapTxGasLimit(uint64 newFlashRepaySwapTxGasLimit_) external onlyGovernor {
-        uint64 _currentFlashRepaySwapTxGasLimit = flashRepaySwapTxGasLimit;
-        if (newFlashRepaySwapTxGasLimit_ == _currentFlashRepaySwapTxGasLimit) revert NewValueIsSameAsCurrent();
-        flashRepaySwapTxGasLimit = newFlashRepaySwapTxGasLimit_;
-    }
-
-    function updateLeverageCallbackTxGasLimit(uint64 newLeverageCallbackTxGasLimit_) external onlyGovernor {
-        uint64 _currentLeverageCallbackTxGasLimit = leverageCallbackTxGasLimit;
-        if (newLeverageCallbackTxGasLimit_ == _currentLeverageCallbackTxGasLimit) revert NewValueIsSameAsCurrent();
-        leverageCallbackTxGasLimit = newLeverageCallbackTxGasLimit_;
-    }
-
-    function updateLeverageSwapTxGasLimit(uint64 newLeverageSwapTxGasLimit_) external onlyGovernor {
-        uint64 _currentSwapTxGasLimit = leverageSwapTxGasLimit;
-        if (newLeverageSwapTxGasLimit_ == _currentSwapTxGasLimit) revert NewValueIsSameAsCurrent();
-        leverageSwapTxGasLimit = newLeverageSwapTxGasLimit_;
-    }
-
-    function updateLzBaseGasLimit(uint256 newLzBaseGasLimit_) external onlyGovernor {
-        uint256 _currentBaseGasLimit = lzBaseGasLimit;
-        if (newLzBaseGasLimit_ == _currentBaseGasLimit) revert NewValueIsSameAsCurrent();
-        lzBaseGasLimit = newLzBaseGasLimit_;
     }
 
     // @dev Use LZ ids (https://stargateprotocol.gitbook.io/stargate/developers/pool-ids)
