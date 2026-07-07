@@ -88,14 +88,7 @@ contract CrossChainDispatcher is ReentrancyGuard, CrossChainDispatcherStorageV2 
         sgeth = sgeth_;
     }
 
-    /**
-     * @notice Called by the OFT contract when tokens are received from source chain.
-     * @dev Token received are swapped to another token
-     * @param srcChainId_ The chain id of the source chain.
-     * @param from_ The address of the account who calls the sendAndCall() on the source chain.
-     * @param amount_ The amount of tokens to transfer.
-     * @param payload_ Additional data with no specified format.
-     */
+    // @notice Called by the OFT contract when tokens are received from source chain.
     function onOFTReceived(uint16 srcChainId_, bytes calldata /*srcAddress_*/, uint64 /*nonce_*/, bytes calldata from_, uint amount_, bytes calldata payload_) external override onlyIfProxyOFT {
         address _from = from_.toAddress(0);
         if (_from == address(0) || _from != crossChainDispatcherOf[srcChainId_]) revert InvalidFromAddress();
@@ -109,61 +102,25 @@ contract CrossChainDispatcher is ReentrancyGuard, CrossChainDispatcherStorageV2 
         }
     }
 
-    /**
-     * @dev Finalize cross-chain flash repay process. The callback may fail due to slippage.
-     */
+    // @dev Finalize cross-chain flash repay process. The callback may fail due to slippage.
     function _crossChainFlashRepayCallback(uint amount_, bytes calldata payload_) private {
-        (address proxyOFT_, address _smartFarmingManager, uint256 _requestId) = CrossChainLib
-            .decodeFlashRepayCallbackPayload(payload_);
-
+        (address proxyOFT_, address _smartFarmingManager, uint256 _requestId) = CrossChainLib.decodeFlashRepayCallbackPayload(payload_);
         IERC20 _syntheticToken = IERC20(IProxyOFT(proxyOFT_).token());
         _syntheticToken.safeApprove(_smartFarmingManager, 0);
         _syntheticToken.safeApprove(_smartFarmingManager, amount_);
         ISmartFarmingManager(_smartFarmingManager).crossChainFlashRepayCallback(_requestId, amount_);
     }
 
-    /**
-     * @dev Swap synthetic token for underlying and trigger callback call
-     */
+    // @dev Swap synthetic token for underlying and trigger callback call
     function _swapAndTriggerLeverageCallback(uint16 srcChainId_, uint amountIn_, bytes calldata payload_) private {
         // 1. Swap
-        (
-            address _srcSmartFarmingManager,
-            address _dstProxyOFT,
-            uint256 _requestId,
-            uint256 _sgPoolId,
-            address _account,
-            uint256 _amountOutMin,
-            uint256 _callbackTxNativeFee
-        ) = CrossChainLib.decodeLeverageSwapPayload(payload_);
-
+        (address _srcSmartFarmingManager,address _dstProxyOFT,uint256 _requestId,uint256 _sgPoolId,address _account,uint256 _amountOutMin,uint256 _callbackTxNativeFee) = CrossChainLib.decodeLeverageSwapPayload(payload_);
         address _bridgeToken = IStargatePool(IStargateFactory(stargateComposer.factory()).getPool(_sgPoolId)).token();
-
         if (_bridgeToken == sgeth) _bridgeToken = weth;
-
-        amountIn_ = _swap({
-            requestId_: _requestId,
-            tokenIn_: IProxyOFT(_dstProxyOFT).token(),
-            tokenOut_: _bridgeToken,
-            amountIn_: amountIn_,
-            amountOutMin_: _amountOutMin
-        });
-
+        amountIn_ = _swap({requestId_: _requestId, tokenIn_: IProxyOFT(_dstProxyOFT).token(), tokenOut_: _bridgeToken, amountIn_: amountIn_, amountOutMin_: _amountOutMin});
         // 2. Transfer underlying to source chain
         uint16 _srcChainId = srcChainId_;
-
-        _sendUsingStargate(
-            LayerZeroParams({
-                tokenIn: _bridgeToken,
-                dstChainId: _srcChainId,
-                amountIn: amountIn_,
-                nativeFee: _callbackTxNativeFee + extraCallbackTxNativeFee[_requestId],
-                payload: CrossChainLib.encodeLeverageCallbackPayload(_srcSmartFarmingManager, _requestId),
-                refundAddress: _account,
-                dstGasForCall: leverageCallbackTxGasLimit,
-                dstNativeAmount: 0
-            })
-        );
+        _sendUsingStargate(LayerZeroParams({tokenIn: _bridgeToken, dstChainId: _srcChainId, amountIn: amountIn_, nativeFee: _callbackTxNativeFee + extraCallbackTxNativeFee[_requestId], payload: CrossChainLib.encodeLeverageCallbackPayload(_srcSmartFarmingManager, _requestId), refundAddress: _account, dstGasForCall: leverageCallbackTxGasLimit, dstNativeAmount: 0}));
     }
 
     function sgReceive(uint16 srcChainId_, bytes memory srcAddress_, uint256 /*nonce_*/, address token_, uint256 amountLD_, bytes memory payload_) external override onlyIfStargateComposer {
@@ -185,9 +142,7 @@ contract CrossChainDispatcher is ReentrancyGuard, CrossChainDispatcherStorageV2 
         }
     }
 
-    /**
-     * @dev Finalize cross-chain leverage process. The callback may fail due to slippage.
-     */
+    // @dev Finalize cross-chain leverage process. The callback may fail due to slippage.
     function _crossChainLeverageCallback(address bridgeToken_, uint256 amount_, bytes memory payload_) private {
         (address _smartFarmingManager, uint256 _requestId) = CrossChainLib.decodeLeverageCallbackPayload(payload_);
         IERC20(bridgeToken_).safeApprove(_smartFarmingManager, 0);
@@ -199,49 +154,18 @@ contract CrossChainDispatcher is ReentrancyGuard, CrossChainDispatcherStorageV2 
         address _to = crossChainDispatcherOf[params_.dstChainId];
         if (_to == address(0)) revert AddressIsNull();
         bytes memory _adapterParams = abi.encodePacked(LZ_ADAPTER_PARAMS_VERSION, uint256(lzBaseGasLimit + params_.dstGasForCall), params_.dstNativeAmount, (params_.dstNativeAmount > 0) ? _to : address(0));
-        ISyntheticToken(params_.tokenIn).proxyOFT().sendAndCall{value: params_.nativeFee}({
-            _from: address(this),
-            _dstChainId: params_.dstChainId,
-            _toAddress: abi.encodePacked(_to),
-            _amount: params_.amountIn,
-            _payload: params_.payload,
-            _dstGasForCall: params_.dstGasForCall,
-            _refundAddress: payable(params_.refundAddress),
-            _zroPaymentAddress: address(0),
-            _adapterParams: _adapterParams
-        });
+        ISyntheticToken(params_.tokenIn).proxyOFT().sendAndCall{value: params_.nativeFee}({_from: address(this), _dstChainId: params_.dstChainId, _toAddress: abi.encodePacked(_to), _amount: params_.amountIn, _payload: params_.payload, _dstGasForCall: params_.dstGasForCall, _refundAddress: payable(params_.refundAddress), _zroPaymentAddress: address(0), _adapterParams: _adapterParams});
     }
 
     function _swapAndTriggerFlashRepayCallback(uint16 srcChainId_, address token_, uint256 amount_, bytes memory payload_) private {
         // 1. Swap
         (address _srcSmartFarmingManager,address _dstProxyOFT,uint256 _requestId,address _account,uint256 _amountOutMin,uint256 _callbackTxNativeFee) = CrossChainLib.decodeFlashRepaySwapPayload(payload_);
         address _syntheticToken = IProxyOFT(_dstProxyOFT).token();
-        amount_ = _swap({
-            requestId_: _requestId,
-            tokenIn_: token_,
-            tokenOut_: _syntheticToken,
-            amountIn_: amount_,
-            amountOutMin_: _amountOutMin
-        });
+        amount_ = _swap({requestId_: _requestId, tokenIn_: token_, tokenOut_: _syntheticToken, amountIn_: amount_, amountOutMin_: _amountOutMin});
         // 2. Transfer synthetic token to source chain
         uint16 _srcChainId = srcChainId_;
         address _srcProxyOFT = IProxyOFT(_dstProxyOFT).getProxyOFTOf(_srcChainId);
-        _sendUsingLayerZero(
-            LayerZeroParams({
-                tokenIn: _syntheticToken,
-                dstChainId: _srcChainId,
-                amountIn: amount_,
-                payload: CrossChainLib.encodeFlashRepayCallbackPayload(
-                    _srcProxyOFT,
-                    _srcSmartFarmingManager,
-                    _requestId
-                ),
-                refundAddress: _account,
-                dstGasForCall: flashRepayCallbackTxGasLimit,
-                dstNativeAmount: 0,
-                nativeFee: _callbackTxNativeFee + extraCallbackTxNativeFee[_requestId]
-            })
-        );
+        _sendUsingLayerZero(LayerZeroParams({tokenIn: _syntheticToken, dstChainId: _srcChainId, amountIn: amount_, payload: CrossChainLib.encodeFlashRepayCallbackPayload(_srcProxyOFT, _srcSmartFarmingManager, _requestId), refundAddress: _account, dstGasForCall: flashRepayCallbackTxGasLimit, dstNativeAmount: 0, nativeFee: _callbackTxNativeFee + extraCallbackTxNativeFee[_requestId]}));
     }
 
     function retrySwapAndTriggerFlashRepayCallback(uint16 srcChainId_, bytes calldata srcAddress_, uint64 nonce_, address token_, uint256 amount_, bytes calldata payload_, uint256 newAmountOutMin_) external payable nonReentrant {
@@ -285,54 +209,18 @@ contract CrossChainDispatcher is ReentrancyGuard, CrossChainDispatcherStorageV2 
             if (_dstProxyOFT == address(0)) revert AddressIsNull();
             if (!isDestinationChainSupported[_dstChainId]) revert DestinationChainNotAllowed();
             uint256 _requestId = requestId_;
-            _payload = CrossChainLib.encodeFlashRepaySwapPayload({
-                srcSmartFarmingManager_: msg.sender,
-                dstProxyOFT_: _dstProxyOFT,
-                requestId_: _requestId,
-                account_: _account,
-                amountOutMin_: amountOutMin_,
-                callbackTxNativeFee_: callbackTxNativeFee_
-            });
+            _payload = CrossChainLib.encodeFlashRepaySwapPayload({srcSmartFarmingManager_: msg.sender, dstProxyOFT_: _dstProxyOFT, requestId_: _requestId, account_: _account, amountOutMin_: amountOutMin_, callbackTxNativeFee_: callbackTxNativeFee_});
         }
-        _sendUsingStargate(
-            LayerZeroParams({
-                tokenIn: tokenIn_,
-                dstChainId: _dstChainId,
-                amountIn: amountIn_,
-                nativeFee: msg.value,
-                payload: _payload,
-                refundAddress: _account,
-                dstGasForCall: flashRepaySwapTxGasLimit_,
-                dstNativeAmount: callbackTxNativeFee_
-            })
-        );
+        _sendUsingStargate(LayerZeroParams({tokenIn: tokenIn_, dstChainId: _dstChainId, amountIn: amountIn_, nativeFee: msg.value, payload: _payload, refundAddress: _account, dstGasForCall: flashRepaySwapTxGasLimit_, dstNativeAmount: callbackTxNativeFee_}));
     }
 
     /***
      * @notice Send synthetic token and trigger swap at destination chain
      * @dev Not checking if bridging is pause because `ProxyOFT._debitFrom()` does it
-     * @param requestId_ Request id.
-     * @param account_ User address and also refund address
-     * @param tokenOut_ tokenOut
-     * @param amountIn_ amountIn
-     * @param amountOutMin_ amountOutMin
-     * @param lzArgs_ LayerZero method argument
      */
-    function triggerLeverageSwap(
-        uint256 requestId_,
-        address payable account_,
-        address tokenIn_,
-        address tokenOut_,
-        uint256 amountIn_,
-        uint256 amountOutMin_,
-        bytes calldata lzArgs_
-    ) external payable override nonReentrant onlyIfSmartFarmingManager onlyIfBridgingIsNotPaused {
+    function triggerLeverageSwap(uint256 requestId_, address payable account_, address tokenIn_, address tokenOut_, uint256 amountIn_, uint256 amountOutMin_, bytes calldata lzArgs_) external payable override nonReentrant onlyIfSmartFarmingManager onlyIfBridgingIsNotPaused {
         address _account = account_;
-
-        (uint16 _dstChainId, uint256 _callbackTxNativeFee, uint64 _leverageSwapTxGasLimit) = CrossChainLib.decodeLzArgs(
-            lzArgs_
-        );
-
+        (uint16 _dstChainId, uint256 _callbackTxNativeFee, uint64 _leverageSwapTxGasLimit) = CrossChainLib.decodeLzArgs(lzArgs_);
         bytes memory _payload;
         {
             address _tokenOut = tokenOut_;
@@ -343,15 +231,7 @@ contract CrossChainDispatcher is ReentrancyGuard, CrossChainDispatcherStorageV2 
             if (_dstProxyOFT == address(0)) revert AddressIsNull();
             if (!isDestinationChainSupported[_dstChainId]) revert DestinationChainNotAllowed();
             if (_sgPoolId == 0) revert BridgeTokenNotSupported();
-
-            _payload = CrossChainLib.encodeLeverageSwapPayload({
-                srcSmartFarmingManager_: msg.sender,
-                dstProxyOFT_: _dstProxyOFT,
-                requestId_: _requestId, sgPoolId_: _sgPoolId,
-                account_: _account,
-                amountOutMin_: _amountOutMin,
-                callbackTxNativeFee_: _callbackTxNativeFee
-            });
+            _payload = CrossChainLib.encodeLeverageSwapPayload({srcSmartFarmingManager_: msg.sender, dstProxyOFT_: _dstProxyOFT, requestId_: _requestId, sgPoolId_: _sgPoolId, account_: _account, amountOutMin_: _amountOutMin, callbackTxNativeFee_: _callbackTxNativeFee});
         }
         _sendUsingLayerZero(LayerZeroParams({tokenIn: tokenIn_, dstChainId: _dstChainId, amountIn: amountIn_, payload: _payload, refundAddress: _account, dstGasForCall: _leverageSwapTxGasLimit, dstNativeAmount: _callbackTxNativeFee, nativeFee: msg.value}));
     }
@@ -368,21 +248,13 @@ contract CrossChainDispatcher is ReentrancyGuard, CrossChainDispatcherStorageV2 
         bytes memory _to = abi.encodePacked(crossChainDispatcherOf[params_.dstChainId]);
         {
             if (_to.toAddress(0) == address(0)) revert AddressIsNull();
-
-            _lzTxParams = IStargateRouter.lzTxObj({
-                dstGasForCall: params_.dstGasForCall,
-                dstNativeAmount: params_.dstNativeAmount,
-                dstNativeAddr: (params_.dstNativeAmount > 0) ? _to : abi.encode(0)
-            });
+            _lzTxParams = IStargateRouter.lzTxObj({dstGasForCall: params_.dstGasForCall, dstNativeAmount: params_.dstNativeAmount, dstNativeAddr: (params_.dstNativeAmount > 0) ? _to : abi.encode(0)});
         }
-
         uint256 _poolId = stargatePoolIdOf[params_.tokenIn];
         if (_poolId == 0) revert BridgeTokenNotSupported();
         uint256 _amountOutMin = (params_.amountIn * (MAX_BPS - stargateSlippage)) / MAX_BPS;
         bytes memory _payload = params_.payload;
-
         IStargateComposer _stargateComposer = stargateComposer;
-
         // Note: StargateComposer only accepts native for ETH pool
         if (params_.tokenIn == weth) {
             IWETH(weth).withdraw(params_.amountIn);
@@ -391,7 +263,6 @@ contract CrossChainDispatcher is ReentrancyGuard, CrossChainDispatcherStorageV2 
             IERC20(params_.tokenIn).safeApprove(address(_stargateComposer), 0);
             IERC20(params_.tokenIn).safeApprove(address(_stargateComposer), params_.amountIn);
         }
-
         _stargateComposer.swap{value: params_.nativeFee}({_dstChainId: params_.dstChainId, _srcPoolId: _poolId, _dstPoolId: _poolId, _refundAddress: payable(params_.refundAddress), _amountLD: params_.amountIn, _minAmountLD: _amountOutMin, _lzTxParams: _lzTxParams, _to: _to, _payload: _payload});
     }
 
