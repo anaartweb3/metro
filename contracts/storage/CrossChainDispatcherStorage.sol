@@ -1,14 +1,8 @@
-// SPDX-License-Identifier: MIT
-
-pragma solidity 0.8.9;
-
 import "../interfaces/ICrossChainDispatcher.sol";
 import "../interfaces/IPoolRegistry.sol";
 
 abstract contract CrossChainDispatcherStorageV1 is ICrossChainDispatcher {
-    /**
-     * @notice The pool registry contract
-     */
+
     IPoolRegistry public poolRegistry;
 
     /**
@@ -17,13 +11,9 @@ abstract contract CrossChainDispatcherStorageV1 is ICrossChainDispatcher {
      */
     mapping(uint256 => uint256) public swapAmountOutMin;
 
-    /**
-     * @notice Maps other chains `CrossChainDispatcher` contracts
-     */
     mapping(uint16 => address) public crossChainDispatcherOf;
 
     /**
-     * @notice The base gas to pay for cross-chain calls
      * @dev This limit covers basic token transfer LZ cost
      */
     uint256 public lzBaseGasLimit;
@@ -53,34 +43,16 @@ abstract contract CrossChainDispatcherStorageV1 is ICrossChainDispatcher {
      */
     uint64 public leverageSwapTxGasLimit;
 
-    /**
-     * @notice Flag that pause/unpause all cross-chain activities
-     */
     bool public isBridgingActive;
 
-    /**
-     * @notice The Stargate Router contract
-     */
     IStargateComposer public stargateComposer;
 
-    /**
-     * @notice Maps Stargate's token pools
-     */
     mapping(address => uint256) public stargatePoolIdOf;
 
-    /**
-     * @notice Maps supported cross-chain routes (i.e. which chains are allowed to be used as source of liquidity)
-     */
     mapping(uint16 => bool) public isDestinationChainSupported;
 
-    /**
-     * @notice WETH contract
-     */
     address public weth;
 
-    /**
-     * @notice SGETH contract
-     */
     address public sgeth;
 }
 
